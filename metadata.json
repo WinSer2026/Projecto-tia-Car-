@@ -1,0 +1,6 @@
+{
+  "name": "DefesaMestre — Simulador de Arguição & Quiz (Lei n.º 18/2018)",
+  "description": "Plataforma de preparação e quiz cronometrado (10s/5s) em 5 níveis de dificuldade para a defesa do projecto de mestrado de Carlota Roberto Monjane sobre a expansão do Ensino Básico de 7 para 9 classes em Moçambique.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
