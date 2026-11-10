@@ -68,6 +68,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
   const [roundAttempts, setRoundAttempts] = useState<QuestionAttempt[]>([]);
   const [recentThemes, setRecentThemes] = useState<ThemeId[]>([currentQuestion.theme]);
   const [speechTriggerCount, setSpeechTriggerCount] = useState<number>(0);
+  const [autoplayBlocked, setAutoplayBlocked] = useState<boolean>(false);
 
   const seenIdsRef = useRef<string[]>(
     seenBaseIds.includes(currentQuestion.baseId)
@@ -91,15 +92,44 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
       return;
     }
 
-    const cancelSpeech = speakPortugueseQuestion(currentQuestion.question, () => {
-      setRemainingMs(QUESTION_TIME_LIMIT_MS);
-      setPhase('QUESTION_10S');
-    });
+    const cancelSpeech = speakPortugueseQuestion(
+      currentQuestion.question,
+      () => {
+        setRemainingMs(QUESTION_TIME_LIMIT_MS);
+        setPhase('QUESTION_10S');
+      },
+      () => {
+        setAutoplayBlocked(true);
+      }
+    );
 
     return () => {
       cancelSpeech();
     };
   }, [currentQuestion.id, phase, isPaused, speechTriggerCount, currentQuestion.question]);
+
+  // If browser blocked initial autoplay (e.g. direct page reload into Quiz),
+  // automatically trigger the voice on the very first touch/click anywhere on the screen.
+  useEffect(() => {
+    if (!autoplayBlocked) return;
+    const handleUnlockTap = () => {
+      setAutoplayBlocked(false);
+      if (phase !== 'REVEAL_5S') {
+        setRemainingMs(QUESTION_TIME_LIMIT_MS);
+        setPhase('READING_QUESTION');
+        setSpeechTriggerCount((c) => c + 1);
+      }
+    };
+    window.addEventListener('click', handleUnlockTap, { once: true });
+    window.addEventListener('touchstart', handleUnlockTap, {
+      passive: true,
+      once: true
+    });
+    return () => {
+      window.removeEventListener('click', handleUnlockTap);
+      window.removeEventListener('touchstart', handleUnlockTap);
+    };
+  }, [autoplayBlocked, phase]);
 
   // Advance to the next rotational question (or complete round if target reached)
   const advanceToNextQuestion = (updatedAttempts: QuestionAttempt[]) => {
@@ -358,7 +388,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
           <div className="mt-3 md:mt-5 flex items-start justify-between gap-3 md:gap-5">
             <div className="flex-1 min-w-0">
               {/* Voice Reading Status Indicator */}
-              <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+              <div className="flex flex-wrap items-center gap-2 mb-1.5">
                 <span
                   data-testid="voice-status-indicator"
                   className={`inline-flex items-center gap-1 text-[11px] md:text-xs font-medium ${
@@ -383,14 +413,20 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
                   <button
                     type="button"
                     onClick={() => {
+                      setAutoplayBlocked(false);
                       setRemainingMs(QUESTION_TIME_LIMIT_MS);
                       setPhase('READING_QUESTION');
                       setSpeechTriggerCount((c) => c + 1);
                     }}
-                    title="Ouvir novamente a pergunta"
-                    className="text-[11px] md:text-xs text-slate-500 hover:text-[#0284C7] underline underline-offset-2 cursor-pointer whitespace-nowrap"
+                    title="Ouvir a pergunta em voz alta"
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] md:text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                      autoplayBlocked
+                        ? 'bg-[#0284C7] text-white border-[#0284C7] animate-pulse'
+                        : 'bg-sky-50 text-[#0284C7] border-sky-200 hover:bg-sky-100'
+                    }`}
                   >
-                    Ouvir de novo
+                    <Volume2 className="w-3 h-3 shrink-0" />
+                    <span>{autoplayBlocked ? 'Activar Som da Voz' : 'Ouvir de novo'}</span>
                   </button>
                 )}
               </div>

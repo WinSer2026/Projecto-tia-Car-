@@ -35,191 +35,470 @@ export function formatTextForPortugueseSpeech(rawText: string): string {
 }
 
 /**
+ * Splits a normalized Portuguese question into natural clause chunks <= maxLen characters
+ * so every chunk is accepted by the neural MP3 TTS stream without truncation.
+ */
+export function splitTextIntoTtsChunks(text: string, maxLen = 175): string[] {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (!clean) return [];
+  if (clean.length <= maxLen) return [clean];
+
+  const rawClauses = clean.split(/(?<=[.?!:;])\s+|(?<=,)\s+/);
+  const chunks: string[] = [];
+  let current = '';
+
+  const pushWordSplit = (longSegment: string) => {
+    const words = longSegment.split(' ');
+    let line = '';
+    for (const word of words) {
+      if (!line) {
+        line = word;
+      } else if (line.length + 1 + word.length <= maxLen) {
+        line += ' ' + word;
+      } else {
+        chunks.push(line);
+        line = word;
+      }
+    }
+    if (line) {
+      current = line;
+    }
+  };
+
+  for (const clause of rawClauses) {
+    if (!clause) continue;
+    if (!current) {
+      if (clause.length <= maxLen) {
+        current = clause;
+      } else {
+        pushWordSplit(clause);
+      }
+    } else if (current.length + 1 + clause.length <= maxLen) {
+      current += ' ' + clause;
+    } else {
+      chunks.push(current);
+      current = '';
+      if (clause.length <= maxLen) {
+        current = clause;
+      } else {
+        pushWordSplit(clause);
+      }
+    }
+  }
+
+  if (current) {
+    chunks.push(current);
+  }
+
+  return chunks;
+}
+
+// Persistent singleton HTMLAudioElement so mobile Safari (iOS) and mobile Chrome (Android)
+// keep media playback unlocked across automatic timer transitions between questions!
+let sharedAudio: HTMLAudioElement | null = null;
+let isQuestionSpeechActive = false;
+let activeUtterance: SpeechSynthesisUtterance | null = null;
+
+function getSharedAudio(): HTMLAudioElement | null {
+  if (typeof window === 'undefined' || typeof Audio === 'undefined') {
+    return null;
+  }
+  if (!sharedAudio) {
+    sharedAudio = new Audio();
+    sharedAudio.preload = 'auto';
+  }
+  return sharedAudio;
+}
+
+// Pre-warm voices list as soon as the module loads in browser
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  try {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.addEventListener?.('voiceschanged', () => {
+      window.speechSynthesis.getVoices();
+    });
+  } catch {
+    // ignore
+  }
+}
+
+/**
  * Selects the best available Portuguese voice from browser SpeechSynthesis.
  */
-function selectPortugueseVoice(synth: SpeechSynthesis): SpeechSynthesisVoice | null {
+function selectPortugueseVoice(
+  synth: SpeechSynthesis
+): SpeechSynthesisVoice | null {
   const voices = synth.getVoices();
   if (!voices || voices.length === 0) return null;
 
-  const normalizeLang = (lang: string) => lang.toLowerCase().replace('_', '-');
+  const normalizeLang = (lang: string) =>
+    (lang || '').toLowerCase().replace('_', '-');
 
-  // Prefer pt-PT or pt-MZ first (closer to Mozambican academic standard), then pt-BR, then any 'pt'
-  const ptExact =
-    voices.find((v) => normalizeLang(v.lang) === 'pt-pt') ||
-    voices.find((v) => normalizeLang(v.lang) === 'pt-mz') ||
-    voices.find((v) => normalizeLang(v.lang) === 'pt-br') ||
-    voices.find((v) => normalizeLang(v.lang).startsWith('pt'));
+  const ptVoices = voices.filter((v) => normalizeLang(v.lang).startsWith('pt'));
+  if (ptVoices.length === 0) return null;
 
-  return ptExact || null;
+  const localPt = ptVoices.filter((v) => v.localService);
+  const pool = localPt.length > 0 ? localPt : ptVoices;
+
+  return (
+    pool.find((v) => normalizeLang(v.lang) === 'pt-pt') ||
+    pool.find((v) => normalizeLang(v.lang) === 'pt-mz') ||
+    pool.find((v) => normalizeLang(v.lang) === 'pt-br') ||
+    pool[0] ||
+    null
+  );
 }
 
-let mobileSpeechUnlocked = false;
-
 /**
- * Unlocks Web Speech API on iOS Safari and Android Chrome during a direct user tap/touch gesture.
+ * Pre-initializes the persistent HTMLAudioElement singleton and resumes Web Speech API
+ * during a direct user tap/click gesture on mobile or desktop.
  */
 export function unlockMobileSpeech(): void {
-  if (
-    mobileSpeechUnlocked ||
-    typeof window === 'undefined' ||
-    !('speechSynthesis' in window)
-  ) {
-    return;
-  }
-  try {
-    const synth = window.speechSynthesis;
-    const silentUtterance = new SpeechSynthesisUtterance('');
-    silentUtterance.volume = 0;
-    silentUtterance.rate = 2;
-    synth.speak(silentUtterance);
-    if (synth.paused) {
-      synth.resume();
+  if (typeof window === 'undefined') return;
+
+  getSharedAudio();
+
+  if ('speechSynthesis' in window) {
+    try {
+      window.speechSynthesis.getVoices();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+    } catch {
+      // ignore
     }
-    mobileSpeechUnlocked = true;
-  } catch {
-    // ignore in restricted environments
   }
 }
 
 export function stopPortugueseSpeech(): void {
+  isQuestionSpeechActive = false;
+  activeUtterance = null;
+
+  if (sharedAudio) {
+    try {
+      sharedAudio.onended = null;
+      sharedAudio.onerror = null;
+      sharedAudio.pause();
+    } catch {
+      // ignore
+    }
+  }
+
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
-      window.speechSynthesis.cancel();
+      if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+        window.speechSynthesis.cancel();
+      }
     } catch {
-      // ignore errors in restricted environments
+      // ignore
     }
   }
 }
 
 /**
- * Automatically reads the question text aloud in Portuguese using Web Speech API.
- * Calls `onComplete()` as soon as the reading finishes so the 10-second countdown
- * starts immediately after the question is read.
- * Returns a cleanup function to cancel speech if the question changes or user answers early.
+ * Offline / Fallback Native Web Speech API speaker
  */
-export function speakPortugueseQuestion(
-  questionText: string,
-  onComplete: () => void
+function speakViaNativeWebSpeech(
+  normalizedText: string,
+  estimatedSpeechMs: number,
+  onSuccessEnd: () => void,
+  onErrorOrSilent: () => void
 ): () => void {
-  let finished = false;
-  let fallbackTimerId: ReturnType<typeof setTimeout> | null = null;
-  let safetyWatchdogId: ReturnType<typeof setTimeout> | null = null;
+  let cancelled = false;
+  let onStartTimer: ReturnType<typeof setTimeout> | null = null;
+  let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const finishOnce = () => {
-    if (finished) return;
-    finished = true;
-    if (fallbackTimerId !== null) {
-      globalThis.clearTimeout(fallbackTimerId);
+  const cleanupTimers = () => {
+    if (onStartTimer !== null) {
+      globalThis.clearTimeout(onStartTimer);
+      onStartTimer = null;
     }
-    if (safetyWatchdogId !== null) {
-      globalThis.clearTimeout(safetyWatchdogId);
+    if (watchdogTimer !== null) {
+      globalThis.clearTimeout(watchdogTimer);
+      watchdogTimer = null;
     }
-    onComplete();
   };
 
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-    // Fallback if SpeechSynthesis API is not available in the environment
-    fallbackTimerId = globalThis.setTimeout(finishOnce, 1500);
+    onErrorOrSilent();
     return () => {
-      finished = true;
-      if (fallbackTimerId !== null) {
-        globalThis.clearTimeout(fallbackTimerId);
-      }
+      cancelled = true;
     };
   }
 
   const synth = window.speechSynthesis;
   try {
-    synth.cancel();
-  } catch {
-    // ignore
-  }
-
-  const normalizedText = formatTextForPortugueseSpeech(questionText);
-  const wordCount = normalizedText.split(/\s+/).filter(Boolean).length;
-  // Estimated natural reading time at ~3.2 words/sec + buffer (max watchdog so it never hangs)
-  const estimatedSpeechMs = Math.min(14000, Math.max(2500, wordCount * 340));
-
-  const startUtterance = () => {
-    if (finished) return;
-
-    const voices = synth.getVoices();
-    // In headless Chromium without OS TTS backends, voices list is empty and utterances may not fire onend
-    if (!voices || voices.length === 0) {
-      fallbackTimerId = globalThis.setTimeout(finishOnce, 1600);
-      return;
+    if (synth.paused) {
+      synth.resume();
     }
 
-    try {
-      const utterance = new SpeechSynthesisUtterance(normalizedText);
-      const selectedVoice = selectPortugueseVoice(synth);
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-        utterance.lang = selectedVoice.lang;
-      } else {
-        utterance.lang = 'pt-PT';
-      }
+    const utterance = new SpeechSynthesisUtterance(normalizedText);
+    activeUtterance = utterance;
 
-      utterance.rate = 1.05; // Clear, dynamic academic cadence
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
-
-      utterance.onend = () => {
-        finishOnce();
-      };
-
-      utterance.onerror = () => {
-        // Even if browser blocks or errors on TTS, immediately start the 10s timer
-        finishOnce();
-      };
-
-      // Safety watchdog in case browser TTS pauses or fails to emit onend
-      safetyWatchdogId = globalThis.setTimeout(finishOnce, estimatedSpeechMs + 1500);
-
-      synth.speak(utterance);
-
-      // In case Chrome has speechSynthesis in a paused state
-      if (synth.paused) {
-        synth.resume();
-      }
-    } catch {
-      fallbackTimerId = globalThis.setTimeout(finishOnce, 1200);
+    const selectedVoice = selectPortugueseVoice(synth);
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+      utterance.lang = selectedVoice.lang;
+    } else {
+      utterance.lang = 'pt-BR';
     }
-  };
 
-  // If voices are already loaded, speak immediately; otherwise wait up to 250ms for onvoiceschanged
-  if (synth.getVoices().length > 0) {
-    startUtterance();
-  } else {
-    let voicesHandled = false;
-    const handleVoicesChanged = () => {
-      if (voicesHandled) return;
-      voicesHandled = true;
-      synth.removeEventListener('voiceschanged', handleVoicesChanged);
-      startUtterance();
+    utterance.rate = 1.02;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    let started = false;
+
+    utterance.onstart = () => {
+      started = true;
+      if (onStartTimer !== null) {
+        globalThis.clearTimeout(onStartTimer);
+        onStartTimer = null;
+      }
     };
-    synth.addEventListener('voiceschanged', handleVoicesChanged);
-    fallbackTimerId = globalThis.setTimeout(() => {
-      if (!voicesHandled) {
-        voicesHandled = true;
-        synth.removeEventListener('voiceschanged', handleVoicesChanged);
-        startUtterance();
+
+    utterance.onend = () => {
+      if (cancelled) return;
+      cleanupTimers();
+      activeUtterance = null;
+      onSuccessEnd();
+    };
+
+    utterance.onerror = (e) => {
+      if (cancelled) return;
+      cleanupTimers();
+      activeUtterance = null;
+      if (e.error === 'canceled' || e.error === 'interrupted') return;
+      onErrorOrSilent();
+    };
+
+    watchdogTimer = globalThis.setTimeout(() => {
+      if (!cancelled) {
+        cleanupTimers();
+        onSuccessEnd();
       }
-    }, 250);
+    }, estimatedSpeechMs + 1500);
+
+    synth.speak(utterance);
+    if (synth.paused) {
+      synth.resume();
+    }
+
+    onStartTimer = globalThis.setTimeout(() => {
+      if (!started && !synth.speaking && !cancelled) {
+        cleanupTimers();
+        onErrorOrSilent();
+      }
+    }, 900);
+  } catch {
+    cleanupTimers();
+    onErrorOrSilent();
   }
 
   return () => {
-    finished = true;
-    if (fallbackTimerId !== null) {
-      globalThis.clearTimeout(fallbackTimerId);
-    }
-    if (safetyWatchdogId !== null) {
-      globalThis.clearTimeout(safetyWatchdogId);
-    }
+    cancelled = true;
+    cleanupTimers();
+    activeUtterance = null;
     try {
-      synth.cancel();
+      if (synth.speaking || synth.pending) {
+        synth.cancel();
+      }
     } catch {
       // ignore
+    }
+  };
+}
+
+/**
+ * Automatically reads the question text aloud in Portuguese.
+ *
+ * Strategy for maximum compatibility across mobile (Android/iOS), Vercel, and desktop:
+ * 1. Primary Engine: Plays neural Portuguese MP3 chunks via the persistent `sharedAudio`
+ *    (`HTMLAudioElement`), which plays through the standard media speaker channel on 100%
+ *    of Android phones, iPhones, and desktop browsers even if no OS TTS pack is installed.
+ * 2. Fallback Engine: If offline or if MP3 stream is unreachable, falls back to native
+ *    `window.speechSynthesis`.
+ * 3. If browser blocks un-gestured autoplay on initial page load (`NotAllowedError`),
+ *    notifies `onAutoplayBlocked()` so the UI can show a one-tap sound activation button.
+ */
+export function speakPortugueseQuestion(
+  questionText: string,
+  onComplete: () => void,
+  onAutoplayBlocked?: () => void
+): () => void {
+  let finished = false;
+  let fallbackTimerId: ReturnType<typeof setTimeout> | null = null;
+  let cancelNativeFallback: (() => void) | null = null;
+
+  stopPortugueseSpeech();
+  isQuestionSpeechActive = true;
+
+  const finishOnce = () => {
+    if (finished) return;
+    finished = true;
+    isQuestionSpeechActive = false;
+    if (fallbackTimerId !== null) {
+      globalThis.clearTimeout(fallbackTimerId);
+      fallbackTimerId = null;
+    }
+    onComplete();
+  };
+
+  const normalizedText = formatTextForPortugueseSpeech(questionText);
+  const wordCount = normalizedText.split(/\s+/).filter(Boolean).length;
+  const estimatedSpeechMs = Math.min(15000, Math.max(3000, wordCount * 350));
+
+  const runNativeFallback = () => {
+    if (finished) return;
+    cancelNativeFallback = speakViaNativeWebSpeech(
+      normalizedText,
+      estimatedSpeechMs,
+      () => {
+        finishOnce();
+      },
+      () => {
+        // Headless browser or muted environment without audio hardware:
+        // start the 10-second countdown cleanly after 1.3s
+        fallbackTimerId = globalThis.setTimeout(finishOnce, 1300);
+      }
+    );
+  };
+
+  const audio = getSharedAudio();
+  const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+
+  if (!audio || !isOnline) {
+    runNativeFallback();
+    return () => {
+      finished = true;
+      isQuestionSpeechActive = false;
+      if (fallbackTimerId !== null) globalThis.clearTimeout(fallbackTimerId);
+      cancelNativeFallback?.();
+    };
+  }
+
+  const chunks = splitTextIntoTtsChunks(normalizedText, 175);
+  if (chunks.length === 0) {
+    finishOnce();
+    return () => {
+      finished = true;
+      isQuestionSpeechActive = false;
+    };
+  }
+
+  let currentChunkIndex = 0;
+  let chunkWatchdogId: ReturnType<typeof setTimeout> | null = null;
+  let progressCheckId: ReturnType<typeof setTimeout> | null = null;
+
+  const clearChunkTimers = () => {
+    if (chunkWatchdogId !== null) {
+      globalThis.clearTimeout(chunkWatchdogId);
+      chunkWatchdogId = null;
+    }
+    if (progressCheckId !== null) {
+      globalThis.clearTimeout(progressCheckId);
+      progressCheckId = null;
+    }
+  };
+
+  const advanceChunk = () => {
+    clearChunkTimers();
+    if (finished) return;
+    currentChunkIndex += 1;
+    playNextChunk();
+  };
+
+  const playNextChunk = () => {
+    clearChunkTimers();
+    if (finished) return;
+    if (currentChunkIndex >= chunks.length) {
+      finishOnce();
+      return;
+    }
+
+    const chunkText = chunks[currentChunkIndex];
+    const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&tl=pt-BR&client=tw-ob&q=${encodeURIComponent(
+      chunkText
+    )}`;
+
+    try {
+      audio.onended = () => {
+        advanceChunk();
+      };
+
+      audio.onloadedmetadata = () => {
+        if (finished) return;
+        if (audio.duration && Number.isFinite(audio.duration) && audio.duration > 0) {
+          const durationMs = Math.ceil((audio.duration * 1000) / (audio.playbackRate || 1)) + 350;
+          if (chunkWatchdogId !== null) {
+            globalThis.clearTimeout(chunkWatchdogId);
+          }
+          chunkWatchdogId = globalThis.setTimeout(advanceChunk, durationMs);
+        }
+      };
+
+      audio.onerror = () => {
+        clearChunkTimers();
+        if (finished) return;
+        audio.onended = null;
+        audio.onerror = null;
+        audio.onloadedmetadata = null;
+        runNativeFallback();
+      };
+
+      // Fallback max chunk duration in case loadedmetadata doesn't report duration
+      const chunkWords = chunkText.split(/\s+/).filter(Boolean).length;
+      const maxChunkMs = Math.min(12000, Math.max(2500, chunkWords * 380));
+      chunkWatchdogId = globalThis.setTimeout(advanceChunk, maxChunkMs);
+
+      audio.src = url;
+      audio.volume = 1.0;
+      audio.playbackRate = 1.05;
+
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch((err: unknown) => {
+          clearChunkTimers();
+          if (finished) return;
+          const errName =
+            err && typeof err === 'object' && 'name' in err
+              ? String((err as { name?: unknown }).name)
+              : '';
+          if (errName === 'NotAllowedError') {
+            onAutoplayBlocked?.();
+          }
+          audio.onended = null;
+          audio.onerror = null;
+          audio.onloadedmetadata = null;
+          runNativeFallback();
+        });
+      }
+    } catch {
+      clearChunkTimers();
+      runNativeFallback();
+    }
+  };
+
+  playNextChunk();
+
+  return () => {
+    finished = true;
+    isQuestionSpeechActive = false;
+    clearChunkTimers();
+    if (fallbackTimerId !== null) {
+      globalThis.clearTimeout(fallbackTimerId);
+      fallbackTimerId = null;
+    }
+    cancelNativeFallback?.();
+    if (sharedAudio) {
+      try {
+        sharedAudio.onended = null;
+        sharedAudio.onerror = null;
+        sharedAudio.onloadedmetadata = null;
+        sharedAudio.pause();
+      } catch {
+        // ignore
+      }
     }
   };
 }

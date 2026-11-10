@@ -9,7 +9,10 @@ import {
   generatePerformanceReport,
   generateRotationalRound
 } from './quizEngine';
-import { formatTextForPortugueseSpeech } from './speechEngine';
+import {
+  formatTextForPortugueseSpeech,
+  splitTextIntoTtsChunks
+} from './speechEngine';
 import { QuestionAttempt } from '../types/quiz';
 
 test('timer constants match 10s question and 5s reveal requirements', () => {
@@ -77,13 +80,20 @@ test('computeRoundSummary and generatePerformanceReport identify crucial improve
   );
 });
 
-test('formatTextForPortugueseSpeech expands academic abbreviations and ordinal classes naturally', () => {
+test('formatTextForPortugueseSpeech and splitTextIntoTtsChunks prepare long questions for MP3 TTS streaming', () => {
   const sample =
-    'Segundo a Lei n.º 18/2018 e a amostra N = 52 nas 7.ª, 8.ª e 9.ª classes (p. 14):';
+    'Segundo a Lei n.º 18/2018 e a amostra N = 52 nas 7.ª, 8.ª e 9.ª classes (p. 14), de que forma os intervenientes educativos compreendem a transição do Ensino Básico no Município de Maputo?';
   const normalized = formatTextForPortugueseSpeech(sample);
   assert.ok(normalized.includes('Lei número 18 barra 2018'));
   assert.ok(normalized.includes('N igual a 52'));
   assert.ok(normalized.includes('sétima, oitava e nona classes'));
   assert.ok(normalized.includes('página 14'));
+
+  const chunks = splitTextIntoTtsChunks(normalized, 120);
+  assert.ok(chunks.length >= 2);
+  for (const chunk of chunks) {
+    assert.ok(chunk.length <= 120, `Chunk length ${chunk.length} exceeds 120`);
+  }
+  assert.equal(chunks.join(' '), normalized);
 });
 
