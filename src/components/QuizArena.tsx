@@ -258,72 +258,73 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
   return (
     <section
       aria-label="Arena de Quiz com Voz Automática e Temporizador 10s/5s"
-      className="max-w-[1320px] mx-auto px-6 py-8"
+      className="max-w-[1320px] mx-auto px-3 sm:px-6 py-2.5 md:py-8"
     >
       {/* Top Toolbar: Level & Mode Selector */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pb-6 mb-8 border-b border-slate-200">
-        <div>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4 pb-2.5 md:pb-6 mb-3 md:mb-8 border-b border-slate-200">
+        <div className="hidden md:block">
           <p className="text-xs text-slate-500">
             <span>Simulador de Defesa de Mestrado</span>
             <span className="mx-2" aria-hidden="true">·</span>
-            <span>Leitura Automática por Voz + 10s Resposta + 5s Gabarito</span>
+            <span>Voz Automática + 10s Resposta + 5s Gabarito</span>
           </p>
           <h1 className="text-2xl font-bold text-slate-900 mt-1 font-serif-display">
             Arguição Interactiva — {selectedLevel === 'MIXED' ? 'Todos os Níveis (1 a 5)' : currentLevelMeta.title}
           </h1>
         </div>
 
-        {/* Interactive Segmented Level Filter Controls */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Interactive Segmented Level Filter Controls (horizontally scrollable on narrow mobile) */}
+        <div className="flex items-center justify-between md:justify-end gap-1.5 overflow-x-auto">
           <div
             role="group"
             aria-label="Seleccionar Nível de Dificuldade"
-            className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200"
+            className="flex items-center gap-0.5 p-0.5 bg-slate-100 rounded-lg border border-slate-200 shrink-0"
           >
             {ALL_LEVELS.map((lvl) => (
               <button
                 key={lvl}
                 type="button"
                 onClick={() => handleSelectLevel(lvl)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                className={`min-h-[32px] md:min-h-[36px] px-2 sm:px-3 py-1 text-[11px] md:text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   selectedLevel === lvl
                     ? 'bg-white text-[#0284C7] shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Nível {lvl}
+                <span className="md:hidden">N{lvl}</span>
+                <span className="hidden md:inline">Nível {lvl}</span>
               </button>
             ))}
             <button
               type="button"
               onClick={() => handleSelectLevel('MIXED')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`min-h-[32px] md:min-h-[36px] px-2 sm:px-3 py-1 text-[11px] md:text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 selectedLevel === 'MIXED'
                   ? 'bg-white text-[#0284C7] shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Misto (1–5)
+              Misto
             </button>
           </div>
 
           <div
             role="group"
             aria-label="Meta de Perguntas da Rodada"
-            className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200"
+            className="flex items-center gap-0.5 p-0.5 bg-slate-100 rounded-lg border border-slate-200 shrink-0"
           >
             {([6, 10, 'INFINITE'] as const).map((target) => (
               <button
                 key={String(target)}
                 type="button"
                 onClick={() => onChangeRoundTarget(target)}
-                className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                className={`min-h-[32px] md:min-h-[36px] px-2 py-1 text-[11px] md:text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   roundTargetCount === target
                     ? 'bg-white text-slate-900 shadow-xs font-semibold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                {target === 'INFINITE' ? 'Modo Infinito' : `${target} Questões`}
+                {target === 'INFINITE' ? '∞' : `${target}Q`}
               </button>
             ))}
           </div>
@@ -331,53 +332,51 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
       </div>
 
       {/* Two-Zone Sandbox Layout (Left: Interactive Question/Reveal Stage; Right: Chronometer & Rotation Deck) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-8 items-start">
         {/* LEFT ZONE (8 cols): Interactive Stage */}
-        <div className="lg:col-span-8 bg-white border border-slate-200 rounded-xl p-6 md:p-8 shadow-xs">
+        <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 md:p-8 shadow-xs">
           {/* Unboxed Metadata Line */}
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 pb-4 border-b border-slate-100">
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] md:text-xs text-slate-500 pb-2.5 md:pb-4 border-b border-slate-100">
+            <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
               <span className="font-semibold text-slate-800">
                 Questão #{questionNumber}
-                {roundTargetCount !== 'INFINITE' ? ` de ${roundTargetCount}` : ' (Rotação Infinita)'}
+                {roundTargetCount !== 'INFINITE' ? `/${roundTargetCount}` : ''}
               </span>
               <span aria-hidden="true">·</span>
               <span>Nível {currentQuestion.level}</span>
               <span aria-hidden="true">·</span>
               <span className="text-[#0284C7] font-medium">
-                Eixo: {currentThemeMeta.shortTitle}
+                {currentThemeMeta.shortTitle}
               </span>
-              <span aria-hidden="true">·</span>
-              <span>{currentQuestion.examinerPersona}</span>
             </div>
-            <span className="font-mono text-slate-500">
+            <span className="font-mono text-[10px] md:text-xs text-slate-500">
               {currentThemeMeta.pagesRef}
             </span>
           </div>
 
           {/* Question Header Row + Corner Circular Timer Ball ("bola no canto a contar o tempo") */}
-          <div className="mt-5 flex items-start justify-between gap-5">
-            <div className="flex-1">
+          <div className="mt-3 md:mt-5 flex items-start justify-between gap-3 md:gap-5">
+            <div className="flex-1 min-w-0">
               {/* Voice Reading Status Indicator */}
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
                 <span
                   data-testid="voice-status-indicator"
-                  className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                  className={`inline-flex items-center gap-1 text-[11px] md:text-xs font-medium ${
                     phase === 'READING_QUESTION'
                       ? 'text-[#0284C7] font-semibold'
                       : 'text-slate-500'
                   }`}
                 >
                   <Volume2
-                    className={`w-3.5 h-3.5 ${
+                    className={`w-3.5 h-3.5 shrink-0 ${
                       phase === 'READING_QUESTION' ? 'animate-pulse text-[#0284C7]' : 'text-slate-400'
                     }`}
                   />
                   {phase === 'READING_QUESTION'
-                    ? 'A ler a pergunta em voz alta... (o tempo de 10s inicia após a leitura)'
+                    ? 'A ler pergunta... (10s após a voz)'
                     : phase === 'QUESTION_10S'
-                      ? 'Leitura concluída · Contagem de 10 segundos activa'
-                      : 'Visualização da resposta fundamentada (5 segundos)'}
+                      ? 'Contagem de 10s activa'
+                      : 'Visualização da resposta (5s)'}
                 </span>
 
                 {phase !== 'REVEAL_5S' && (
@@ -389,16 +388,16 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
                       setSpeechTriggerCount((c) => c + 1);
                     }}
                     title="Ouvir novamente a pergunta"
-                    className="text-xs text-slate-500 hover:text-[#0284C7] underline underline-offset-2 cursor-pointer ml-1 whitespace-nowrap"
+                    className="text-[11px] md:text-xs text-slate-500 hover:text-[#0284C7] underline underline-offset-2 cursor-pointer whitespace-nowrap"
                   >
-                    Ouvir novamente
+                    Ouvir de novo
                   </button>
                 )}
               </div>
 
               <h2
                 data-testid="active-question-text"
-                className="text-xl md:text-2xl font-semibold text-slate-900 leading-snug font-serif-display"
+                className="text-base sm:text-xl md:text-2xl font-semibold text-slate-900 leading-snug font-serif-display"
               >
                 {currentQuestion.question}
               </h2>
@@ -410,9 +409,9 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
               aria-label="Temporizador Circular da Questão"
               className="shrink-0 flex flex-col items-center"
             >
-              <div className="relative w-16 h-16 flex items-center justify-center rounded-full bg-slate-50 border border-slate-200 shadow-xs">
+              <div className="relative w-14 h-14 md:w-16 md:h-16 flex items-center justify-center rounded-full bg-slate-50 border border-slate-200 shadow-xs">
                 <svg
-                  className="w-16 h-16 -rotate-90 transform"
+                  className="w-14 h-14 md:w-16 md:h-16 -rotate-90 transform"
                   viewBox="0 0 64 64"
                   aria-hidden="true"
                 >
@@ -634,7 +633,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
                   type="button"
                   disabled={phase === 'REVEAL_5S'}
                   onClick={() => lockInAnswerOrTimeout(idx, false)}
-                  className={`w-full text-left p-3.5 rounded-lg border transition-all flex items-start justify-between gap-4 cursor-pointer disabled:cursor-default ${buttonStyle}`}
+                  className={`w-full min-h-[52px] text-left p-3.5 rounded-xl border transition-all active:scale-[0.99] flex items-start justify-between gap-3 cursor-pointer disabled:cursor-default ${buttonStyle}`}
                 >
                   <div className="flex items-start gap-3">
                     <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-700 shrink-0 mt-0.5">
@@ -658,9 +657,71 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
             })}
           </div>
 
-          {/* Action during READING_QUESTION or QUESTION_10S: allow immediate oral self-check if desired */}
+          {/* Mobile Thumb-Zone Action & Score Strip (visible on smartphones/tablets < lg) */}
+          <div className="mt-5 pt-4 border-t border-slate-100 lg:hidden space-y-3">
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isPaused) {
+                    stopPortugueseSpeech();
+                  }
+                  setIsPaused((prev) => !prev);
+                }}
+                className="min-h-[44px] flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+              >
+                {isPaused ? (
+                  <>
+                    <Play className="w-4 h-4" />
+                    <span>Retomar</span>
+                  </>
+                ) : (
+                  <>
+                    <Pause className="w-4 h-4" />
+                    <span>Pausar</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (phase === 'READING_QUESTION' || phase === 'QUESTION_10S') {
+                    lockInAnswerOrTimeout(null, true);
+                  } else {
+                    advanceToNextQuestion(roundAttempts);
+                  }
+                }}
+                className="min-h-[44px] flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-white bg-[#0284C7] hover:bg-[#0369A1] rounded-xl transition-colors cursor-pointer"
+              >
+                <FastForward className="w-4 h-4" />
+                <span>
+                  {phase === 'READING_QUESTION' || phase === 'QUESTION_10S'
+                    ? 'Ver Resposta (5s)'
+                    : 'Próxima Questão'}
+                </span>
+              </button>
+            </div>
+
+            {roundAttempts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  stopPortugueseSpeech();
+                  setPhase('ROUND_COMPLETE');
+                  onFinishRound(roundAttempts, selectedLevel);
+                }}
+                className="w-full min-h-[44px] py-2.5 px-4 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+              >
+                Concluir Rodada & Ver Feedback ({roundAttempts.length}{' '}
+                {roundAttempts.length === 1 ? 'respondida' : 'respondidas'})
+              </button>
+            )}
+          </div>
+
+          {/* Desktop Action during READING_QUESTION or QUESTION_10S */}
           {(phase === 'READING_QUESTION' || phase === 'QUESTION_10S') && (
-            <div className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-4">
+            <div className="hidden lg:flex mt-5 pt-4 border-t border-slate-100 flex-wrap items-center justify-between gap-4">
               <p className="text-xs text-slate-500">
                 {phase === 'READING_QUESTION' ? (
                   <>

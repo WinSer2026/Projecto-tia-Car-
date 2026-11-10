@@ -41,14 +41,44 @@ function selectPortugueseVoice(synth: SpeechSynthesis): SpeechSynthesisVoice | n
   const voices = synth.getVoices();
   if (!voices || voices.length === 0) return null;
 
+  const normalizeLang = (lang: string) => lang.toLowerCase().replace('_', '-');
+
   // Prefer pt-PT or pt-MZ first (closer to Mozambican academic standard), then pt-BR, then any 'pt'
   const ptExact =
-    voices.find((v) => v.lang.toLowerCase() === 'pt-pt') ||
-    voices.find((v) => v.lang.toLowerCase() === 'pt-mz') ||
-    voices.find((v) => v.lang.toLowerCase() === 'pt-br') ||
-    voices.find((v) => v.lang.toLowerCase().startsWith('pt'));
+    voices.find((v) => normalizeLang(v.lang) === 'pt-pt') ||
+    voices.find((v) => normalizeLang(v.lang) === 'pt-mz') ||
+    voices.find((v) => normalizeLang(v.lang) === 'pt-br') ||
+    voices.find((v) => normalizeLang(v.lang).startsWith('pt'));
 
   return ptExact || null;
+}
+
+let mobileSpeechUnlocked = false;
+
+/**
+ * Unlocks Web Speech API on iOS Safari and Android Chrome during a direct user tap/touch gesture.
+ */
+export function unlockMobileSpeech(): void {
+  if (
+    mobileSpeechUnlocked ||
+    typeof window === 'undefined' ||
+    !('speechSynthesis' in window)
+  ) {
+    return;
+  }
+  try {
+    const synth = window.speechSynthesis;
+    const silentUtterance = new SpeechSynthesisUtterance('');
+    silentUtterance.volume = 0;
+    silentUtterance.rate = 2;
+    synth.speak(silentUtterance);
+    if (synth.paused) {
+      synth.resume();
+    }
+    mobileSpeechUnlocked = true;
+  } catch {
+    // ignore in restricted environments
+  }
 }
 
 export function stopPortugueseSpeech(): void {

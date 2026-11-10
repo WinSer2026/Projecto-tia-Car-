@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { LevelSelectorDashboard } from './components/LevelSelectorDashboard';
 import { PerformanceReportView } from './components/PerformanceReportView';
 import { ProjectStudyView } from './components/ProjectStudyView';
+import { OfflineIndicator } from './components/PWAInstallModal';
 import { QuizArena } from './components/QuizArena';
 import { RoundFeedbackView } from './components/RoundFeedbackView';
-import { ActiveTab, TopBar } from './components/TopBar';
+import { ActiveTab, MobileBottomNav, TopBar } from './components/TopBar';
 import {
   DifficultyLevel,
   QuestionAttempt,
@@ -15,6 +16,7 @@ import {
   generatePerformanceReport,
   generateRotationalRound
 } from './utils/quizEngine';
+import { unlockMobileSpeech } from './utils/speechEngine';
 
 const STORAGE_KEY_ROUNDS = 'defesamestre_rounds_v1';
 const STORAGE_KEY_SEEN = 'defesamestre_seen_ids_v1';
@@ -76,16 +78,39 @@ export default function App() {
     }
   }, [seenBaseIds]);
 
+  // Unlock mobile speech synthesis on first touch/click anywhere on the screen
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      unlockMobileSpeech();
+    };
+    window.addEventListener('touchstart', handleFirstInteraction, {
+      passive: true,
+      once: true
+    });
+    window.addEventListener('click', handleFirstInteraction, {
+      passive: true,
+      once: true
+    });
+    return () => {
+      window.removeEventListener('touchstart', handleFirstInteraction);
+      window.removeEventListener('click', handleFirstInteraction);
+    };
+  }, []);
+
   const performanceReport = useMemo(
     () => generatePerformanceReport(roundsHistory),
     [roundsHistory]
   );
 
   const handleStartLevelQuiz = (level: DifficultyLevel | 'MIXED') => {
+    unlockMobileSpeech();
     setSelectedLevel(level);
     setCompletedRoundForFeedback(null);
     setArenaSessionKey((prev) => prev + 1);
     setActiveTab('arena');
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const handleFinishRound = (
@@ -96,6 +121,9 @@ export default function App() {
     const summary = computeRoundSummary(level, attempts);
     setRoundsHistory((prev) => [summary, ...prev]);
     setCompletedRoundForFeedback(summary);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const handleLoadDiagnosticSimulation = () => {
@@ -136,7 +164,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-[#0F172A]">
+    <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-[#0F172A] pb-20 md:pb-0">
       <TopBar
         activeTab={activeTab}
         onSelectTab={(tab) => {
@@ -144,6 +172,9 @@ export default function App() {
             setCompletedRoundForFeedback(null);
           }
           setActiveTab(tab);
+          if (typeof window !== 'undefined') {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }
         }}
         onQuickStartQuiz={() => handleStartLevelQuiz(selectedLevel)}
       />
@@ -206,16 +237,30 @@ export default function App() {
         {activeTab === 'study' && <ProjectStudyView />}
       </main>
 
-      <footer className="bg-white border-t border-slate-200 py-6 px-6 mt-16">
-        <div className="max-w-[1320px] mx-auto flex flex-wrap items-center justify-between gap-4 text-xs text-slate-500">
+      <footer className="bg-white border-t border-slate-200 py-6 px-4 md:px-6 mt-10 md:mt-16">
+        <div className="max-w-[1320px] mx-auto flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
           <div>
             Projecto de Mestrado em Políticas Públicas Educacionais · Universidade Pedagógica de Maputo (2026) · Carlota Roberto Monjane
           </div>
           <div>
-            Temporizador Oficial: 10s Pergunta · 5s Visualização da Resposta · Níveis 1 a 5 Rotativos
+            Temporizador Oficial: Voz Automática · 10s Pergunta · 5s Visualização da Resposta
           </div>
         </div>
       </footer>
+
+      <OfflineIndicator />
+      <MobileBottomNav
+        activeTab={activeTab}
+        onSelectTab={(tab) => {
+          if (tab === 'arena') {
+            setCompletedRoundForFeedback(null);
+          }
+          setActiveTab(tab);
+          if (typeof window !== 'undefined') {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }
+        }}
+      />
     </div>
   );
 }
